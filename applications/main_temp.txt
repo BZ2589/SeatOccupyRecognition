@@ -1,0 +1,231 @@
+#include <rtthread.h>
+#include <rtdevice.h>
+#include <board.h>
+#include <drv_lcd.h>
+#include <rttlogo.h>
+#include <stdlib.h>
+#include <string.h>
+
+#define DBG_TAG "main"
+#define DBG_LVL         DBG_LOG
+#include <rtdbg.h>
+
+// 最大座位数量
+#define MAX_SEATS 100
+
+// 座位状态枚举
+typedef enum {
+    SEAT_AVAILABLE,     // 空闲
+    SEAT_OCCUPIED,      // 使用中
+    SEAT_RESERVED       // 占座中
+} SeatStatus;
+
+// 座位信息结构（已删除user字段）
+typedef struct {
+    rt_uint8_t id;              // 座位ID
+    SeatStatus status;          // 座位状态
+    rt_tick_t update_tick;      // 最后更新的系统滴答数
+} SeatInfo;
+
+// 座位状态字符串映射（英文）
+const char* seat_status_strings[] = {
+    "Available",
+    "Occupied",
+    "Reserved"
+};
+
+// 座位状态颜色映射
+#define WHITE           0xFFFF
+#define BLACK           0x0000
+#define GREEN           0x07E0
+#define RED             0xF800
+#define YELLOW          0xFFE0
+rt_uint16_t seat_status_colors[] = {
+    GREEN,      // 空闲-绿色
+    RED,        // 使用中-红色
+    YELLOW      // 占座中-黄色
+};
+
+// 数据库结构
+typedef struct {
+    SeatInfo seats[MAX_SEATS];  // 座位数组
+    rt_uint8_t count;           // 当前座位数量
+} SeatDatabase;
+
+// 全局变量
+static SeatDatabase seat_db;
+static rt_uint8_t current_seat_id = 1;  // 当前显示的座位ID
+
+// 接收函数声明
+rt_uint8_t get_received_seat_id(void);
+SeatStatus get_received_seat_status(void);
+
+// 显示单个座位信息
+void show_single_seat(rt_uint8_t seatID) {
+    SeatInfo *seat = NULL;
+
+    // 在数据库中查找座位
+    for (int i = 0; i < seat_db.count; i++) {
+        if (seat_db.seats[i].id == seatID) {
+            seat = &seat_db.seats[i];
+            break;
+        }
+    }
+
+    // 如果找不到座位，显示英文提示
+    if (seat == NULL) {
+        lcd_clear(WHITE);
+        lcd_set_color(BLACK, WHITE);
+        lcd_show_string(30, 100, 24, "Seat Not Found");
+        lcd_show_string(10, 140, 16, "The specified seat does not exist");
+        lcd_show_string(10, 160, 16, "Please check the seat ID");
+        return;
+    }
+
+    // 更新显示
+    lcd_clear(WHITE);
+    lcd_set_color(BLACK, WHITE);  // 文字黑色，背景白色
+
+    // 显示标题和日期
+    lcd_show_string(10, 20, 24, "Seat Information");
+    char date_str[32];
+    rt_sprintf(date_str, "Date: 2025-07-05");
+    lcd_show_string(10, 50, 16, date_str);
+
+    // 绘制分隔线
+    lcd_draw_line(0, 75, 240, 75);
+
+    // 显示座位ID
+    char seat_info[32];
+    rt_sprintf(seat_info, "Seat ID: %d", seat->id);
+    lcd_show_string(10, 90, 24, seat_info);
+
+    // 状态分两行显示
+    lcd_set_color(WHITE, seat_status_colors[seat->status]);  // 设置背景色
+    lcd_show_string(10, 130, 32, "Status:");  // 第一行
+    lcd_show_string(10, 170, 32, seat_status_strings[seat->status]);  // 第二行
+}
+
+// 初始化数据库
+void db_init(void) {
+    rt_memset(&seat_db, 0, sizeof(SeatDatabase));
+    LOG_I("Seat database initialized. Max seats: %d", MAX_SEATS);
+}
+
+// 更新座位状态
+rt_err_t db_update_seat_status(rt_uint8_t seat_id, SeatStatus status) {
+    SeatInfo *seat = NULL;
+
+    // 在数据库中查找座位
+    for (int i = 0; i < seat_db.count; i++) {
+        if (seat_db.seats[i].id == seat_id) {
+            seat = &seat_db.seats[i];
+            break;
+        }
+    }
+
+    // 如果找不到座位，创建一个新的
+    if (seat == NULL) {
+        if (seat_db.count < MAX_SEATS) {
+            seat = &seat_db.seats[seat_db.count];
+            seat->id = seat_id;
+            seat_db.count++;
+        } else {
+            LOG_E("Database full, cannot add new seat!");
+            return -RT_ERROR;
+        }
+    }
+
+    // 更新座位信息
+    seat->status = status;
+    seat->update_tick = rt_tick_get();  // 更新时间戳
+
+    LOG_I("Seat %d updated to %s",
+          seat->id, seat_status_strings[seat->status]);
+
+    return RT_EOK;
+}
+
+// 获取座位信息
+SeatInfo* db_get_seat(rt_uint8_t seat_id) {
+    for (int i = 0; i < seat_db.count; i++) {
+        if (seat_db.seats[i].id == seat_id) {
+            return &seat_db.seats[i];
+        }
+    }
+    return RT_NULL;
+}
+
+// 显示所有座位状态
+void db_display_all_seats(void) {
+    LOG_I("=== All Seats Status ===");
+    for (int i = 0; i < seat_db.count; i++) {
+        SeatInfo *seat = &seat_db.seats[i];
+        LOG_I("Seat %d: %-10s Updated: %d ticks",
+              seat->id,
+              seat_status_strings[seat->status],
+              (int)seat->update_tick);
+    }
+}
+
+// 模拟接收函数实现（仅返回座位ID和状态）
+rt_uint8_t get_received_seat_id(void) {
+    // 示例：返回1-3之间的循环ID
+    static rt_uint8_t id = 1;
+    id = (id % 3) + 1;
+    return id;
+}
+
+SeatStatus get_received_seat_status(void) {
+    // 示例：循环返回三种状态
+    static SeatStatus status = SEAT_AVAILABLE;
+    status = (status + 1) % 3;
+    return status;
+}
+
+int main(void) {
+    rt_uint8_t last_seat_id = 0;
+    SeatStatus last_status = SEAT_AVAILABLE;
+
+    rt_device_t dev = rt_device_find("lcd");
+    rt_device_init(dev);
+    db_init();   // 初始化数据库
+
+    // 添加初始数据
+    db_update_seat_status(1, SEAT_AVAILABLE);
+    db_update_seat_status(2, SEAT_OCCUPIED);
+    db_update_seat_status(3, SEAT_RESERVED);
+
+    // 显示初始座位信息
+    show_single_seat(1);
+    db_display_all_seats();
+
+    // 主循环：从接收函数获取数据并更新数据库
+    while (1) {
+        // 获取最新接收的座位ID和状态
+        rt_uint8_t seat_id = get_received_seat_id();
+        SeatStatus status = get_received_seat_status();
+
+        // 只有当数据变化时才更新数据库和显示
+        if (seat_id != last_seat_id || status != last_status) {
+            // 更新数据库
+            db_update_seat_status(seat_id, status);
+
+            // 更新显示（当前显示的座位）
+            current_seat_id = seat_id;  // 始终显示最新接收的座位
+            show_single_seat(seat_id);
+
+            // 记录最新状态
+            last_seat_id = seat_id;
+            last_status = status;
+
+            // 显示所有座位状态
+            db_display_all_seats();
+        }
+
+        // 延时
+        rt_thread_mdelay(3000);  // 每3秒检查一次
+    }
+
+    return 0;
+}
