@@ -1,4 +1,4 @@
-SeatOccupyRecognition
+# SeatOccupyRecognition
 ## 简介
 本仓库为嵌入式大赛RT-Thread赛道参赛开源代码库
 ## 硬件说明
