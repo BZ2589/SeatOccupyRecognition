@@ -1,11 +1,11 @@
 # SeatOccupyRecognition
 ## 简介
-本仓库为嵌入式大赛RT-Thread赛道参赛开源代码库
+本仓库为嵌入式大赛RT-Thread赛道参赛队11890的开源代码库。
 ## 硬件说明
 本参赛项目使用了**星火一号开发板**与**Vision Board**两块开发板共同协同开发。
 ## 软件说明
 ### 星火一号
-星火一号内创建了4个线程：看门狗线程、LCD屏线程、WIFI接收线程、数据库线程
+星火一号内创建了4个线程：看门狗线程、LCD屏线程、WIFI接收线程、数据库线程。
 ### Vision Board
 Vision Board内部署了MobileNetV2 SSD 量化模型。
 模型训练使用了实拍的2000张图片作为数据集，在**Edge Impulse**中标注并训练模型。模型结果已放到<code>vision_board/trained.tffile</code>。
