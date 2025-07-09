@@ -172,7 +172,7 @@ try:
                     # 根据检测结果确定状态码
                     if person_count >= person_threshold:
                         status = "1"
-                    elif person_count < 2 and (book_detected or other_detected):
+                    elif person_count < 2 and (book_detected):
                         status = "2"
                     elif table_detected and not (book_detected or other_detected or person_count):
                         status = "4"
